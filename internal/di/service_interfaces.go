@@ -46,6 +46,12 @@ type quotaMetricsRefresher interface {
 	RefreshUsageBaselines(ctx context.Context) error
 }
 
+// pendingDepthPublisher refreshes the pending-intent depth gauge between
+// reaper ticks. *worker.PendingReaper satisfies it.
+type pendingDepthPublisher interface {
+	PublishDepth(ctx context.Context)
+}
+
 // fleetSnapshotRefresher is the *infra.BackendRuntime call the fleet snapshot
 // service makes each tick.
 type fleetSnapshotRefresher interface {

@@ -121,11 +121,18 @@ func (r *PendingReaper) processPendingQueue(ctx context.Context) batch.Summary {
 		return true
 	})
 
+	r.PublishDepth(ctx)
+	return sum
+}
+
+// PublishDepth publishes the pending-intent depth gauge. The reaper calls it
+// after each pass, and the usage-flush tick calls it on its much shorter
+// cadence so the gauge does not hold a stale value between reaper ticks.
+func (r *PendingReaper) PublishDepth(ctx context.Context) {
 	if depth, err := r.store.PendingDepth(ctx); err == nil {
 		r.PublishGauges(ctx, telemetry.GaugeSourcePendingReaper,
 			telemetry.WorkerGauges{PendingIntentsDepth: &depth})
 	}
-	return sum
 }
 
 // resolveOneIntent applies the reaper's resolution decision to a single

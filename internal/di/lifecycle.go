@@ -120,12 +120,22 @@ func ProvideLifecycleManager(i do.Injector) (*lifecycle.Manager, error) {
 		return nil, err
 	}
 
+	// Only worker instances run a reaper; the others read the gauge it
+	// published through LoadWorkerGauges.
+	var pending pendingDepthPublisher
+	if mode.IsWorker() {
+		if reaper, err := do.Invoke[*worker.PendingReaper](i); err == nil {
+			pending = reaper
+		}
+	}
+
 	sm := lifecycle.NewManager()
 	sm.Register("usage_flush", NewUsageFlushService(&UsageFlushDeps{
 		Flusher: usageSvc,
 		Tracker: rt.Usage(),
 		Fleet:   rt,
 		States:  states,
+		Pending: pending,
 	}))
 	sm.Register("fleet_snapshot", NewFleetSnapshotService(rt, locker, cfg.Telemetry.Metrics.FleetInterval))
 	sm.Register("cb_watchdog", breaker.NewWatchdog(registry))

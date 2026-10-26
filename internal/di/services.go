@@ -59,18 +59,21 @@ type usageFlushService struct {
 	tracker nearLimitReporter
 	fleet   quotaMetricsRefresher
 	states  backendStateRefresher
+	pending pendingDepthPublisher // nil when this instance runs no reaper
 	log     *slog.Logger
 }
 
 // UsageFlushDeps groups what the flush tick draws on: the usage service that
 // owns the flush, the counters that say whether to tick faster, the runtime
 // that republishes the gauges afterwards, and the backend state manager whose
-// cached states the tick reloads.
+// cached states the tick reloads. Pending, when set, is the pending reaper
+// whose depth gauge the tick refreshes.
 type UsageFlushDeps struct {
 	Flusher usageFlushOps
 	Tracker nearLimitReporter
 	Fleet   quotaMetricsRefresher
 	States  backendStateRefresher
+	Pending pendingDepthPublisher
 }
 
 // NewUsageFlushService constructs the usage flush background service.
@@ -85,6 +88,7 @@ func NewUsageFlushService(d *UsageFlushDeps) lifecycle.Runner {
 		tracker: d.Tracker,
 		fleet:   d.Fleet,
 		states:  d.States,
+		pending: d.Pending,
 		log:     tickrunner.ComponentLogger("usage_flush"),
 	}
 }
@@ -161,6 +165,12 @@ func (s *usageFlushService) flushTick(ctx context.Context) {
 	// A stale cache only costs ranking: admission reads the records itself.
 	if err := s.states.Refresh(ctx); err != nil && !errors.Is(err, core.ErrDBUnavailable) {
 		s.log.ErrorContext(ctx, "backend state refresh failed", "error", err)
+	}
+
+	// The reaper only publishes after its own pass, which can be minutes
+	// apart; republish here so the gauge follows the queue.
+	if s.pending != nil {
+		s.pending.PublishDepth(ctx)
 	}
 }
 

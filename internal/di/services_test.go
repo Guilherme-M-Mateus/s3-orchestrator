@@ -218,6 +218,35 @@ func TestUsageFlushService_FlushTick(t *testing.T) {
 	}
 }
 
+// recordingPending is a pendingDepthPublisher that appends each publish to calls.
+type recordingPending struct{ calls *[]string }
+
+func (r recordingPending) PublishDepth(_ context.Context) {
+	*r.calls = append(*r.calls, "PublishPendingDepth")
+}
+
+// TestUsageFlushService_FlushTickPublishesPendingDepth checks that a worker
+// instance refreshes the pending-intent depth gauge on every flush tick, after
+// the rest of the tick, rather than only on the reaper's own cadence.
+func TestUsageFlushService_FlushTickPublishesPendingDepth(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	svc := NewUsageFlushService(&UsageFlushDeps{
+		Flusher: recordingFlusher{calls: &calls},
+		Tracker: nearLimit(false),
+		Fleet:   recordingFleet{calls: &calls},
+		States:  recordingStates{calls: &calls},
+		Pending: recordingPending{calls: &calls},
+	}).(*usageFlushService)
+
+	svc.flushTick(t.Context())
+
+	want := []string{"RefreshQuotaBaselines", "FlushUsage", "RefreshUsageBaselines", "RefreshBackendStates", "PublishPendingDepth"}
+	if !slices.Equal(calls, want) {
+		t.Errorf("calls = %v, want %v", calls, want)
+	}
+}
+
 // TestUsageFlushService_RunFlushesEachInterval drives Run on a fake clock. It
 // flushes once per configured interval, and once a backend is near its limit
 // with adaptive flushing on, the ticks after the first come at the fast
